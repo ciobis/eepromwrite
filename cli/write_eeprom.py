@@ -1,39 +1,38 @@
 import serial
 import argparse
 import serial.tools.list_ports
-from multiprocessing import Process
+import time
+
+def ser_write_int(arduino, value):
+    arduino.write((str(value) + '\n').encode())
 
 
-def ser_write_int(ser, value):
-    ser.write((str(value) + '\n').encode())
+def ser_read_line(arduino):
+    return arduino.readline().decode("utf-8").strip()
 
 
-def ser_read_line(ser):
-    return ser.readline().decode("utf-8").strip()
+def write_eeprom_value(arduino, address, value):
+    ser_write_int(arduino, 1)
+    ser_write_int(arduino, address)
+    ser_write_int(arduino, value)
+    return ser_read_line(arduino)
 
 
-def write_eeprom_value(ser, address, value):
-    ser_write_int(ser, 1)
-    ser_write_int(ser, address)
-    ser_write_int(ser, value)
-    return ser_read_line(ser)
+def read_eeprom_value(arduino, address):
+    ser_write_int(arduino, 2)
+    ser_write_int(arduino, address)
+    return int(ser_read_line(arduino))
 
 
-def read_eeprom_value(ser, address):
-    ser_write_int(ser, 2)
-    ser_write_int(ser, address)
-    return int(ser_read_line(ser))
-
-
-def write_data_to_eeprom(ser, data):
+def write_data_to_eeprom(arduino, data):
     for address, value in data.items():
-        print(write_eeprom_value(ser, address, value))
+        print(write_eeprom_value(arduino, address, value))
 
 
-def validate_eeprom_data(ser, data):
+def validate_eeprom_data(arduino, data):
     invalid_data = dict()
     for address, expected_value in data.items():
-        eeprom_value = read_eeprom_value(ser, address)
+        eeprom_value = read_eeprom_value(arduino, address)
         if eeprom_value != expected_value:
             invalid_data[address] = eeprom_value
 
@@ -62,16 +61,6 @@ def data_from_file(file_name):
     return result
 
 
-def arduino_handshake(ser):
-    proc = Process(target=lambda: (ser_write_int(ser, 1), ser_read_line(ser)))
-    proc.start()
-    proc.join(timeout=1)
-    proc.terminate()
-
-    if proc.exitcode != 0:
-        arduino_handshake(ser)
-
-
 availablePorts = ','.join(map(lambda port: port.device, serial.tools.list_ports.comports()))
 parser = argparse.ArgumentParser(description='Writes bytes to eeprom')
 parser.add_argument('--portName', required=True, help='Port name, pick one of available: [' + availablePorts + ']')
@@ -81,11 +70,19 @@ parser.add_argument('--validate', type=bool, default=False, help='Reads eeprom a
 args = parser.parse_args()
 
 data = data_from_file(args.lsvFile)
-with serial.Serial(args.portName, args.baudRate) as ser:
-    arduino_handshake(ser)
-    print("Handshake complete")
+with serial.Serial(port = args.portName, baudrate = args.baudRate, timeout = 3, rtscts=True) as arduino:
+    # Toggle DTR to reset Arduino
+    arduino.setDTR(False)
+    time.sleep(1)
+    # toss any data already received, see
+    # http://pyserial.sourceforge.net/pyserial_api.html#serial.Serial.flushInput
+    arduino.flushInput()
+    arduino.setDTR(True)
 
-    write_data_to_eeprom(ser, data)
+    print(ser_read_line(arduino))
+
+    write_data_to_eeprom(arduino, data)
     if args.validate:
-        invalid_data = validate_eeprom_data(ser, data)
+        print("validating data")
+        invalid_data = validate_eeprom_data(arduino, data)
         print(format_validation_msg(invalid_data, data))

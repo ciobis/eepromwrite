@@ -65,8 +65,7 @@ void setup() {
     ; // wait for serial port to connect. Needed for native USB
   }
   
-  int handshake = Serial.parseInt();
-  Serial.println("OK");
+  Serial.println("Arduino OK");
 }
 
 void loop() {
