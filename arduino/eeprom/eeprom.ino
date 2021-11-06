@@ -174,6 +174,6 @@ void setAddress(int address) {
   digitalWrite(LATCH_ENABLED, HIGH);
 }
 
-int nthBit(int value, int n) {
-  return value & (1 << n);
+bool nthBit(int value, int n) {
+  return (value & (1 << n)) > 0;
 }
